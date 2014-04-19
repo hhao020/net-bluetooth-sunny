@@ -166,34 +166,34 @@ sub operation_time {
     return $self->_squeeze_query_result($self->_query("OperationTime"));
 }
 
-sub dc_power {
+sub dc {
     my $self = shift;
     die "Not logged in" unless $self->{loggedIn};
     
-    my @resps = $self->_query("SpotDCPower","SpotDCVoltage");
-    my $ret = {};
-    # Super squeeze
-    for my $resp (@resps) {
-        for my $inv (keys %$resp) {
-            for my $v (values %{$resp->{$inv}}) {
-                for my $e (@$v) {
-                    my $r = $e->{res};
-                    for my $k (keys %$r) {
-                        for my $kk (keys %{$r->{$k}}) {
-                            $ret->{$inv}->{$k}->{$kk} = $r->{$k}->{$kk};
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return $ret;
+    return $self->_squeeze_query_result($self->_query("SpotDCPower","SpotDCVoltage"));
 }
+
+sub ac {
+    my $self = shift;
+    die "Not logged in" unless $self->{loggedIn};
+    
+    return $self->_squeeze_query_result($self->_query("SpotACPower","SpotACVoltage","SpotACTotalPower"));
+}
+
+sub frequency {
+    my $self = shift;
+    die "Not logged in" unless $self->{loggedIn};
+
+    return $self->_squeeze_query_result($self->_query("SpotGridFrequency"));
+}
+
+# =========================================================================================== 
 
 sub _squeeze_query_result {
     my $self = shift;
     my $ret = {};
     for my $resps (@_) {
+        #print Dumper($resps);
         for my $inverter (keys %$resps) {
             my $cmd_resp = $resps->{$inverter};
             for my $values (values %$cmd_resp) {
@@ -298,6 +298,26 @@ $INVERTER_COMMANDS =
                          first => 0x00451F00,
                          last => 0x004521FF
                         },
+     "SpotACPower" => {
+                       command => 0x51000200,
+                       first => 0x00464000,
+                       last => 0x004642FF
+                      },
+     "SpotACVoltage" => {
+                         command => 0x51000200,
+                         first => 0x00464800,
+                         last => 0x004652FF
+                        },
+     "SpotACTotalPower" => {
+                            command => 0x51000200,
+                            first => 0x00263F00,
+                            last => 0x00263FFF
+                           },
+     "SpotGridFrequency" => {
+                             command => 0x51000200,
+                             first => 0x00465700,
+                             last => 0x004657FF
+                            }
     };
 
 # ==============================================================
@@ -326,7 +346,23 @@ $INVERTER_EXTRACTORS =
      # SpotDCVoltage
      0x451F => { sub => _x_value_cls("dc_voltage",100),offset => 28},     
      0x4521 => { sub => _x_value_cls("dc_current",1000),offset => 28},
+     # SpotACPower
+     0x4640 => { sub => _x_value("ac_power_1"),offset => 28},
+     0x4641 => { sub => _x_value("ac_power_2"),offset => 28},
+     0x4642 => { sub => _x_value("ac_power_3"),offset => 28},
+     # SpotACVoltage
+     0x4648 => { sub => _x_value("ac_voltage_1",100),offset => 28},
+     0x4649 => { sub => _x_value("ac_voltage_2",100),offset => 28},
+     0x464A => { sub => _x_value("ac_voltage_3",100),offset => 28},
+     0x4650 => { sub => _x_value("ac_current_1",100),offset => 28},
+     0x4651 => { sub => _x_value("ac_current_2",100),offset => 28},
+     0x4652 => { sub => _x_value("ac_current_3",100),offset => 28},  
+     # SpotACPowerTotal
+     0x263F => { sub => _x_value("ac_power"),offset => 28},
+     # SpotGridFrequency
+     0x4657 => { sub => _x_value("freq"),offset => 28},
     };
+
 
 sub _x_software_version {
     my ($o,$resp) = @_;
@@ -385,13 +421,14 @@ sub _x_value_64 {
     }
 }
 
+# When using CLS to distinguish between 1 and 2. Not used here.
 sub _x_value_cls {
     my $what = shift;
     my $fact = shift || 1;
     return sub { 
         my ($o,$resp,$opts) = @_;
         my $cls = $opts->{cls};
-        return { $cls => { $what => ( _resp_long($resp,$o + 8) / $fact )}}; 
+        return { $what . "_" . $cls => ( _resp_long($resp,$o + 8) / $fact )}; 
     }
 }
 
